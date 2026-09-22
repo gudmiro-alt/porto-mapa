@@ -659,6 +659,11 @@ function dayVisitedRefs(day){
   day.steps.forEach((st,idx)=>{if(arr[idx])refs.add(String(st.b));});
   return refs;
 }
+function dayMapGlyph(p){
+  if(p.number)return String(p.number); // ten sam numer co w "Spis miejsc"
+  if(p.kind==='hotel')return 'H';
+  return kindIcon(p.kind); // 🍽️ restauracja, 🚇 przystanek — pozostałe typy w tych danych nie występują poza trasą dnia
+}
 function teardownDayMap(){
   if(dayMapUnsub){try{dayMapUnsub();}catch(e){}}
   if(dayMap){try{dayMap.remove();}catch(e){}}
@@ -683,12 +688,13 @@ function initDayMap(day){
     const visitedRefs=dayVisitedRefs(day);
     pts.forEach((p,i)=>{
       const isVisited=visitedRefs.has(String(routeRefs[i]));
-      const marker=L.marker([p.lat,p.lon],{icon:dayMapIcon(i+1,isVisited)}).addTo(map).bindPopup(`${esc(p.name)}${isVisited?'<br>✓ odwiedzone':''}`);
-      dayMapMarkers.push({ref:String(routeRefs[i]),num:i+1,marker});
+      const glyph=dayMapGlyph(p);
+      const marker=L.marker([p.lat,p.lon],{icon:dayMapIcon(glyph,isVisited)}).addTo(map).bindPopup(`${esc(p.name)}${isVisited?'<br>✓ odwiedzone':''}`);
+      dayMapMarkers.push({ref:String(routeRefs[i]),glyph,marker});
     });
     map.fitBounds(latlngs,{padding:[24,24]});
   }
-  document.getElementById('mapMeta').textContent='Numery pinezek odpowiadają kolejności trasy; szary = już odwiedzone. Kafelki mapy wymagają internetu — reszta planu działa offline.';
+  document.getElementById('mapMeta').textContent='Numery pinezek odpowiadają numeracji ze „Spisu miejsc" (H = hotel, 🍽️ = restauracja, 🚇 = przystanek); szary = już odwiedzone. Kafelki mapy wymagają internetu — reszta planu działa offline.';
 
   let userMarker=null;
   dayMapUnsub=geoSubscribe(pos=>{
@@ -702,9 +708,9 @@ function initDayMap(day){
   });
   setTimeout(()=>{try{map.invalidateSize();}catch(e){}},150);
 }
-function dayMapIcon(num,isVisited){
+function dayMapIcon(glyph,isVisited){
   const bg=isVisited?'var(--muted)':DAY_MAP_COLOR;
-  return L.divIcon({className:'',html:`<div style="background:${bg};color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)${isVisited?';opacity:.75':''}">${num}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
+  return L.divIcon({className:'',html:`<div style="background:${bg};color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)${isVisited?';opacity:.75':''}">${glyph}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
 }
 /* Odświeża same kolory pinezek na już otwartej mapie dnia — wywoływane po
    każdym zaznaczeniu/odznaczeniu checkboxa, żeby nie trzeba było chować
@@ -713,7 +719,7 @@ function refreshDayMapMarkers(day){
   if(!dayMap||!dayMapMarkers||dayMapFor!==day.id)return;
   const visitedRefs=dayVisitedRefs(day);
   dayMapMarkers.forEach(m=>{
-    m.marker.setIcon(dayMapIcon(m.num,visitedRefs.has(m.ref)));
+    m.marker.setIcon(dayMapIcon(m.glyph,visitedRefs.has(m.ref)));
   });
 }
 
