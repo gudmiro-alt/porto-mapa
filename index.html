@@ -258,7 +258,7 @@ function getVisitedPlaceNumbers(){
 let currentView='plan';
 let currentDay=0;
 let leafletReady=false;
-let dayMap=null, dayMapFor=null, dayMapUnsub=null;
+let dayMap=null, dayMapFor=null, dayMapUnsub=null, dayMapMarkers=null;
 let overviewMap=null, overviewMapUnsub=null;
 
 /* ---- geolokalizacja: jedno wspólne źródło pozycji dla całej aplikacji ----
@@ -514,6 +514,7 @@ function renderPlan(){
 
   renderNowBar();
   refreshLiveDistances();
+  refreshDayMapMarkers(d);
 }
 
 /* ---- pasek "Dalej" — jedno miejsce z bieżącym krokiem, dystansem i zapowiedzią kolejnego ---- */
@@ -651,10 +652,17 @@ function toggleMap(day){
   }
   refreshGeoWatchState();
 }
+const DAY_MAP_COLOR='#1e3a8a';
+function dayVisitedRefs(day){
+  const arr=getDayProgress(day);
+  const refs=new Set();
+  day.steps.forEach((st,idx)=>{if(arr[idx])refs.add(String(st.b));});
+  return refs;
+}
 function teardownDayMap(){
   if(dayMapUnsub){try{dayMapUnsub();}catch(e){}}
   if(dayMap){try{dayMap.remove();}catch(e){}}
-  dayMap=null;dayMapUnsub=null;dayMapFor=null;
+  dayMap=null;dayMapUnsub=null;dayMapFor=null;dayMapMarkers=null;
 }
 function initDayMap(day){
   if(!window.L)return;
@@ -666,16 +674,17 @@ function initDayMap(day){
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     maxZoom:19,attribution:'© OpenStreetMap contributors'
   }).addTo(map);
-  const pts=day.route.map(r=>getP(r)).filter(hasCoords);
+  const routeRefs=day.route.filter(r=>hasCoords(getP(r)));
+  const pts=routeRefs.map(r=>getP(r));
   const latlngs=pts.map(p=>[p.lat,p.lon]);
+  dayMapMarkers=[];
   if(latlngs.length){
-    const visitedNums=getVisitedPlaceNumbers();
-    L.polyline(latlngs,{color:day.color||'#2563eb',weight:3,opacity:.8}).addTo(map);
+    L.polyline(latlngs,{color:DAY_MAP_COLOR,weight:3,opacity:.8}).addTo(map);
+    const visitedRefs=dayVisitedRefs(day);
     pts.forEach((p,i)=>{
-      const isVisited=p.number&&visitedNums.has(p.number);
-      const bg=isVisited?'var(--muted)':(day.color||'#2563eb');
-      const icon=L.divIcon({className:'',html:`<div style="background:${bg};color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)${isVisited?';opacity:.75':''}">${i+1}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
-      L.marker([p.lat,p.lon],{icon}).addTo(map).bindPopup(`${esc(p.name)}${isVisited?'<br>✓ odwiedzone':''}`);
+      const isVisited=visitedRefs.has(String(routeRefs[i]));
+      const marker=L.marker([p.lat,p.lon],{icon:dayMapIcon(i+1,isVisited)}).addTo(map).bindPopup(`${esc(p.name)}${isVisited?'<br>✓ odwiedzone':''}`);
+      dayMapMarkers.push({ref:String(routeRefs[i]),num:i+1,marker});
     });
     map.fitBounds(latlngs,{padding:[24,24]});
   }
@@ -692,6 +701,20 @@ function initDayMap(day){
     }
   });
   setTimeout(()=>{try{map.invalidateSize();}catch(e){}},150);
+}
+function dayMapIcon(num,isVisited){
+  const bg=isVisited?'var(--muted)':DAY_MAP_COLOR;
+  return L.divIcon({className:'',html:`<div style="background:${bg};color:#fff;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)${isVisited?';opacity:.75':''}">${num}</div>`,iconSize:[24,24],iconAnchor:[12,12]});
+}
+/* Odświeża same kolory pinezek na już otwartej mapie dnia — wywoływane po
+   każdym zaznaczeniu/odznaczeniu checkboxa, żeby nie trzeba było chować
+   i pokazywać mapy na nowo. Nie dotyka samej mapy/kafelków/GPS. */
+function refreshDayMapMarkers(day){
+  if(!dayMap||!dayMapMarkers||dayMapFor!==day.id)return;
+  const visitedRefs=dayVisitedRefs(day);
+  dayMapMarkers.forEach(m=>{
+    m.marker.setIcon(dayMapIcon(m.num,visitedRefs.has(m.ref)));
+  });
 }
 
 /* ---- mapa ogólna: wszystkie 34 atrakcje ---- */
